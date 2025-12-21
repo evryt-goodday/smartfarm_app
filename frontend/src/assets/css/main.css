@@ -11,17 +11,50 @@ body {
 }
 
 :root {
-  --body-bg-color: #f5f7fa;
+  --body-bg-color: #f5f7fa; /* 배경색을 더 밝고 부드러운 색상으로 변경 */
   --home-bg-color: #f8fafc;
-  --item-bg-white: #ffffff;
-  --item-bg-lighter: #f8f9fa;
+  --item-bg-white: #ffffff; /* 헤더, 사이드바 등의 배경색을 흰색으로 통일 */
+  --item-bg-lighter: #f8f9fa; /* 좀 더 부드러운 색상으로 변경 */
 
   --item-red-color: #e74c3c;
   --item-blue-color: #3498db;
   --item-orange-color: #f39c12;
   --item-green-color: #2ecc71;
+  --item-yellow-color: #f1c40f;
+  --item-purple-color: #9b59b6;
+  --item-brown-color: #795548;
+  --item-grey-color: #cecece;
 
   --aside-width: 150px;
   --header-height: 60px;
   --default-border-radius: 8px;
+
+  --logo-image: url('@/assets/images/logo.png');
+}
+
+/* 전역 스크롤바 스타일 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--item-bg-lighter);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #ccc;
+  border-radius: 3px;
+  transition: all 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #999;
+}
+
+/* Firefox 스크롤바 스타일 */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #ccc var(--item-bg-lighter);
 }

@@ -1,0 +1,2 @@
+INSERT INTO smartfarm.`user` (login_id,password,name,email,phone,department,`position`,profile_image,last_login,status,created_at,updated_at) VALUES
+	 ('farm_admin','hashed_password','스마트팜관리자','admin@smartfarm.com','010-1234-5678','기술개발부','시스템 관리자','https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=facearea&facepad=2&w=256&h=256&q=80','2025-04-02 14:05:20','active','2025-04-02 14:05:20','2025-04-04 09:38:12');

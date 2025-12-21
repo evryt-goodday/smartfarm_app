@@ -1,8 +1,10 @@
 import mariadb from "mariadb";
-import dbConfig from "../config/dbConfig";
+import dbConfig from "../config/dbConfig.js";
 
+// MariaDB 연결 풀 생성
 const pool = mariadb.createPool(dbConfig);
 
+// 데이터베이스 연결 테스트
 const testConnection = async () => {
     let conn;
     try {

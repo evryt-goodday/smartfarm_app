@@ -1,3 +1,114 @@
+<script setup>
+import { useStore } from 'vuex'
+import { computed, onMounted, ref } from 'vue'
+import moment from 'moment'
+import 'moment/locale/ko'
+import SettingIcon from '@/assets/icons/common/setting.svg'
+import EditIcon from '@/assets/icons/profile/edit.svg'
+import toast from '@/utils/toast'
+
+// 센서 아이콘 불러오기
+import TemperatureIcon from '@/assets/icons/home/temperature.svg'
+import HumidityIcon from '@/assets/icons/home/humidity.svg'
+import LightIcon from '@/assets/icons/home/light.svg'
+import CO2Icon from '@/assets/icons/home/air.svg'
+import DustIcon from '@/assets/icons/home/mask.svg'
+import SoilIcon from '@/assets/icons/home/soil.svg'
+import PressureIcon from '@/assets/icons/home/pressure.svg' // 기압 아이콘
+import WindIcon from '@/assets/icons/home/wind.svg' // 풍속 아이콘
+import CloudIcon from '@/assets/icons/home/cloud.svg' // 운량 아이콘
+import RainIcon from '@/assets/icons/home/rain.svg' // 강수량 아이콘
+
+const store = useStore()
+const isLoading = ref(false)
+
+// 한국어 로케일 설정
+moment.locale('ko')
+
+// moment.js를 사용한 날짜 포맷팅 함수
+const formatDate = (dateString) => {
+  if (!dateString) return '정보 없음'
+  const date = moment(dateString)
+  if (!date.isValid()) return '유효하지 않은 날짜'
+  return date.format('YYYY년 MM월 DD일')
+}
+
+const userProfile = computed(() => ({ ...store.state.user }))
+
+const devices = computed(() => store.state.user.userDevices)
+
+// 센서 타입 매핑 객체 정의
+const sensorIconMap = {
+  // 주요 키워드 기반 매핑
+  keywords: [
+    { terms: ['온도'], icon: TemperatureIcon },
+    { terms: ['습도'], icon: HumidityIcon },
+    { terms: ['조도', '빛'], icon: LightIcon },
+    { terms: ['이산화탄소', 'CO2', '공기질'], icon: CO2Icon },
+    { terms: ['미세먼지', '먼지'], icon: DustIcon },
+    { terms: ['토양', '흙'], icon: SoilIcon },
+    { terms: ['기압', '압력'], icon: PressureIcon },
+    { terms: ['풍속', '바람'], icon: WindIcon },
+    { terms: ['운량', '구름'], icon: CloudIcon },
+    { terms: ['강수량', '비', '강우', '강설'], icon: RainIcon },
+  ],
+  // 기본 아이콘
+  default: TemperatureIcon,
+}
+
+// 센서 타입에 맞는 아이콘 가져오기
+const getSensorIcon = (description) => {
+  if (!description) return sensorIconMap.default
+
+  // 소문자로 변환하여 검색
+  const desc = description.toLowerCase()
+
+  // 키워드 기반으로 매칭되는 아이콘 찾기
+  for (const { terms, icon } of sensorIconMap.keywords) {
+    if (terms.some((term) => desc.includes(term.toLowerCase()))) {
+      return icon
+    }
+  }
+
+  // 매칭되는 게 없으면 기본 아이콘 반환
+  return sensorIconMap.default
+}
+
+const updateNotification = async (type, event) => {
+  try {
+    const value = userProfile.value[`${type}_notifications`] === 1 ? 0 : 1
+
+    // 즉시 UI 업데이트를 위해 event.target.checked 값을 변경하지 않음
+    // 사용자에게 즉각적인 피드백 제공을 위해 store 상태를 먼저 업데이트
+    store.commit('user/UPDATE_NOTIFICATION', { type, value })
+
+    // 서버에 업데이트 요청
+    const success = await store.dispatch('user/updateNotificationSettings', {
+      type,
+      value,
+    })
+
+    if (success) {
+      toast.custom('success', success.message)
+    }
+  } catch (err) {
+    // 에러 발생 시 토글 상태를 원래대로 되돌림
+    const originalValue = userProfile.value[`${type}_notifications`] === 1 ? 0 : 1
+    store.commit('user/UPDATE_NOTIFICATION', { type, originalValue })
+    toast.custom('error', '알림 설정 업데이트에 실패했습니다.')
+    console.error('알림 설정 업데이트 실패:', err)
+  }
+}
+
+onMounted(async () => {
+  try {
+    await store.dispatch('user/fetchUserDevices')
+  } catch (error) {
+    console.error('디바이스 로딩 실패:', error)
+  }
+})
+</script>
+
 <template>
   <div class="profile-view">
     <!-- 로딩 상태 표시 -->
@@ -19,11 +130,11 @@
         </div>
         <div class="profile-actions">
           <button class="action-btn">
-            <!-- <img src="" alt=""> -->
+            <img :src="EditIcon" width="24" height="24" alt="setting" />
             프로필 수정
           </button>
           <button class="action-btn">
-            <!-- <img src="" alt=""> -->
+            <img :src="SettingIcon" width="24" height="24" alt="setting" />
             설정
           </button>
         </div>
@@ -68,7 +179,11 @@
                   <span class="setting-desc">중요 알림을 이메일로 받기</span>
                 </div>
                 <label class="toggle-switch">
-                  <input type="checkbox" />
+                  <input
+                    type="checkbox"
+                    :checked="userProfile.email_notifications === 1"
+                    @change="(e) => updateNotification('email', e)"
+                  />
                   <span class="toggle-slider"></span>
                 </label>
               </div>
@@ -79,7 +194,11 @@
                   <span class="setting-desc">긴급 알림을 SMS로 받기</span>
                 </div>
                 <label class="toggle-switch">
-                  <input type="checkbox" />
+                  <input
+                    type="checkbox"
+                    :checked="userProfile.sms_notifications === 1"
+                    @change="(e) => updateNotification('sms', e)"
+                  />
                   <span class="toggle-slider"></span>
                 </label>
               </div>
@@ -90,7 +209,11 @@
                   <span class="setting-desc">웹 브라우저 푸시 알림 받기</span>
                 </div>
                 <label class="toggle-switch">
-                  <input type="checkbox" />
+                  <input
+                    type="checkbox"
+                    :checked="userProfile.push_notifications === 1"
+                    @change="(e) => updateNotification('push', e)"
+                  />
                   <span class="toggle-slider"></span>
                 </label>
               </div>
@@ -103,13 +226,13 @@
             <div class="sensors-list">
               <div v-for="device in devices" :key="device.device_id" class="sensor-item">
                 <div class="sensor-icon">
-                  <!-- <img src="" alt=""> -->
+                  <!-- 센서 종류에 따른 아이콘 표시 -->
+                  <img :src="getSensorIcon(device.description)" alt="센서 아이콘" />
                 </div>
                 <div class="sensor-info">
                   <div class="sensor-name">{{ device.description }}</div>
                   <div class="sensor-location">{{ device.location }}</div>
                 </div>
-
                 <div
                   class="sensor-status"
                   :class="{
@@ -234,40 +357,11 @@
   </div>
 </template>
 
-<script setup>
-import { computed, onMounted, ref } from 'vue'
-import { useStore } from 'vuex'
-import moment from 'moment'
-import 'moment/locale/ko'
-
-const store = useStore()
-const isLoading = ref(false)
-
-moment.locale('ko')
-
-const formatDate = (dateString) => {
-  if (!dateString) return '정보 없음'
-  const date = moment(dateString)
-  if (!date.isValid()) return '유효하지 않은 날짜'
-  return date.format('YYYY년 MM월 DD일')
-}
-
-const userProfile = computed(() => ({ ...store.state.user }))
-const devices = computed(() => store.state.user.userDevices)
-
-onMounted(async () => {
-  try {
-    await store.dispatch('user/fetchUserDevices')
-  } catch (error) {
-    console.error('디바이스 로딩 실패:', error)
-  }
-})
-</script>
-
 <style lang="scss" scoped>
 .profile-view {
   padding: 20px;
   background-color: var(--body-bg-color);
+  min-height: calc(100vh - var(--header-height));
 
   .profile-header {
     display: flex;
@@ -379,6 +473,7 @@ onMounted(async () => {
     }
 
     .panels-row {
+      // 알림 할때 작성 해야함
       display: flex;
       gap: 25px;
 
@@ -402,11 +497,13 @@ onMounted(async () => {
           &:last-child {
             border-bottom: none;
           }
+
           .info-label {
             color: #7f8c8d;
             font-weight: 500;
             font-size: 1em;
           }
+
           .info-value {
             color: #2c3e50;
             font-size: 1em;
@@ -427,7 +524,7 @@ onMounted(async () => {
           align-items: center;
           padding: 15px;
           background-color: var(--item-bg-lighter);
-          border-radius: var(--default-border-radius);
+          border-radius: 8px;
 
           .setting-label {
             display: flex;
@@ -462,7 +559,7 @@ onMounted(async () => {
                 background-color: var(--item-green-color);
               }
 
-              &:checked + .toggle-slider::before {
+              &:checked + .toggle-slider:before {
                 transform: translateX(30px);
               }
             }
@@ -508,7 +605,7 @@ onMounted(async () => {
           align-items: center;
           padding: 15px;
           background-color: var(--item-bg-lighter);
-          border-radius: var(--default-border-radius);
+          border-radius: 8px;
           transition: all 0.2s ease;
           box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 
@@ -598,6 +695,7 @@ onMounted(async () => {
         }
       }
     }
+
     .activity-panel {
       .activity-list {
         display: flex;

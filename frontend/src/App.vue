@@ -1,11 +1,12 @@
 <script setup>
-import Layout from '@/components/layout/Layout.vue'
-import { onMounted, ref } from 'vue'
 import { useStore } from 'vuex'
+import { onMounted, ref } from 'vue'
 
 const store = useStore()
 const isLoading = ref(false)
 const error = ref(null)
+
+import Layout from '@/components/layout/Layout.vue'
 
 const fetchProfile = async () => {
   try {

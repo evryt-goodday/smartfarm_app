@@ -32,7 +32,7 @@ import HeaderComponent from '@/components/common/HeaderComponent.vue'
 
     .content-container {
       flex: 1;
-      overflow: auto;
+      overflow-y: auto;
       padding: 0;
       margin: 0;
       height: calc(100vh - var(--header-height));

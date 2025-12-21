@@ -34,7 +34,7 @@ export default {
         if (typeof response.data === 'object' && response.data !== null) {
           commit('SET_HOUSES', response.data)
         } else {
-          console.error('API 응답이 객체가 아닙니다.', response.data)
+          console.error('API 응답이 객체가 아닙니다:', response.data)
           commit('SET_HOUSES', {})
         }
       } catch (error) {

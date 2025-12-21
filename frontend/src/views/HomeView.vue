@@ -1,48 +1,197 @@
+<script setup>
+import { useStore } from 'vuex'
+
+import EastTopIcon from '@/assets/icons/common/east-top.svg'
+import ArrowBackIcon from '@/assets/icons/home/arrow_back.svg'
+import ArrowForwardIcon from '@/assets/icons/home/arrow_forward.svg'
+import VideoIcon from '@/assets/icons/home/video.svg'
+import CaptureIcon from '@/assets/icons/home/capture.svg'
+import CheckCircleIcon from '@/assets/icons/home/check_circle.svg'
+import CircleIcon from '@/assets/icons/home/circle.svg'
+import CameraImage from '@/assets/images/camera.png'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { SENSOR_TYPES, SENSOR_TYPE_MAPPING } from '@/constants/sensors'
+
+const store = useStore()
+const sensorList = computed(() => store.state.sensor.sensorList)
+const sensorRealtime = computed(() => store.state.sensor.sensorRealtime)
+const sensorCount = computed(() => Object.keys(sensorList.value).length)
+const isLoading = ref(true)
+const isLoadingData = ref(false)
+const hasApiError = ref(false)
+const errorMessage = ref('')
+let timer = null
+
+const selectedHouse = computed(() => store.state.house.selectedHouse)
+const isHouseSelected = computed(() => selectedHouse.value && selectedHouse.value !== '')
+const isNoSensorData = computed(
+  () => isHouseSelected.value && (sensorCount.value === 0 || hasApiError.value) && !isLoading.value,
+)
+
+watch(selectedHouse, async (newValue) => {
+  if (newValue) {
+    isLoading.value = true
+    hasApiError.value = false
+    errorMessage.value = ''
+
+    // 타이머 정지 및 초기화
+    if (timer) {
+      clearInterval(timer)
+      timer = null
+    }
+
+    try {
+      await store.dispatch('sensor/fetchSensorList')
+      if (!timer) {
+        startRealTimeUpdates()
+      }
+    } catch (error) {
+      console.error('센서 데이터 로드 실패:', error)
+
+      // 에러 정보 기록
+      hasApiError.value = true
+      errorMessage.value = error.response?.data?.message || '센서 데이터를 불러올 수 없습니다.'
+
+      // 센서 목록 초기화 - 서버에서 데이터를 가져오지 못했으므로
+      store.commit('sensor/SET_SENSOR_LIST', {})
+    } finally {
+      isLoading.value = false
+    }
+  }
+})
+
+const startRealTimeUpdates = () => {
+  // 기존 타이머가 있으면 제거
+  if (timer) clearInterval(timer)
+
+  timer = setInterval(async () => {
+    if (!isHouseSelected.value) return
+
+    try {
+      isLoadingData.value = true
+      await store.dispatch('sensor/fetchSensorList')
+      // 성공 시 에러 상태 초기화
+      hasApiError.value = false
+      errorMessage.value = ''
+    } catch (error) {
+      console.error('센서 데이터 업데이트 실패:', error)
+      hasApiError.value = true
+      errorMessage.value = error.response?.data?.message || '센서 데이터를 불러올 수 없습니다.'
+
+      // 실시간 업데이트 중 오류 발생 시 타이머 정지
+      clearInterval(timer)
+      timer = null
+    } finally {
+      isLoadingData.value = false
+    }
+  }, 1000 * 60) // 1분마다 업데이트
+}
+
+onMounted(async () => {
+  try {
+    isLoading.value = true
+    hasApiError.value = false
+
+    if (isHouseSelected.value) {
+      await store.dispatch('sensor/fetchSensorList')
+      startRealTimeUpdates()
+    }
+  } catch (error) {
+    console.error('센서 목록 로딩 실패:', error)
+    hasApiError.value = true
+  } finally {
+    isLoading.value = false
+  }
+})
+
+onUnmounted(() => {
+  if (timer) clearInterval(timer)
+})
+
+const getSensorInfo = (type) => {
+  const mappedType = SENSOR_TYPE_MAPPING[type?.toLowerCase()]
+  return SENSOR_TYPES[mappedType] || {}
+}
+</script>
+
 <template>
-  <div class="layout-dashboard">
+  <!-- 하우스 선택 요청 메시지 -->
+  <div v-if="!isHouseSelected" class="house-selection-message">
+    <div class="message-container">
+      <div class="message-icon">🏠</div>
+      <h2>하우스를 선택해주세요</h2>
+      <p>상단 메뉴에서 하우스를 선택하면 센서 데이터를 확인할 수 있습니다.</p>
+    </div>
+  </div>
+
+  <!-- 센서 데이터 없음 메시지 -->
+  <div v-else-if="isNoSensorData" class="house-selection-message">
+    <div class="message-container">
+      <div class="message-icon">⚠️</div>
+      <h2>센서 데이터가 없습니다</h2>
+      <p>선택하신 하우스({{ selectedHouse.name }})에 등록된 센서가 없습니다.</p>
+      <p v-if="hasApiError" class="error-message">
+        {{ errorMessage || '센서 데이터를 불러오는 중 오류가 발생했습니다.' }}
+      </p>
+      <p>다른 하우스를 선택하거나, 관리자에게 센서 등록을 요청해주세요.</p>
+    </div>
+  </div>
+
+  <!-- 로딩 화면 -->
+  <div v-else-if="isLoading" class="loading-container">
+    <div class="loading-spinner"></div>
+    <div class="loading-text">데이터 불러오는 중...</div>
+  </div>
+
+  <div v-else class="layout-dashboard">
     <!-- 지도 섹션 -->
     <section class="section-map">
-      <div class="section-map__view">
-        <div v-if="selectedHouse" class="house-indicator">선택된 하우스: {{ getHouseName }}</div>
-      </div>
-      <!-- <div class="section-map__view"></div> -->
+      <div class="section-map__view"></div>
       <ul class="section-map__indicators">
-        <li class="indicator-item" v-for="(sensor, index) in filteredSensors" :key="index">
+        <li v-for="sensor in sensorList" :key="sensor.device_id" class="indicator-item">
           <div class="sensor-card">
             <div class="sensor-card__header">
               <div class="sensor-card__title">
-                <div class="sensor-card_icon">
-                  <!-- <img src="" alt=""> -->
+                <div class="sensor-card__icon">
+                  <img
+                    :src="getSensorInfo(sensor.sensor_type).icon"
+                    width="24"
+                    height="24"
+                    :alt="sensor.sensor_type"
+                  />
                 </div>
-                <div class="sensor-card__label">{{ sensor.name }}</div>
+                <div class="sensor-card__label">{{ sensor.description }}</div>
               </div>
             </div>
             <div>
               <div class="sensor-card__value">
-                {{ sensor.value }}
-                <span>{{ sensor.unit }}</span>
+                {{ sensorRealtime[sensor.device_id]?.value || '-' }}
+                <span>{{ getSensorInfo(sensor.sensor_type).unit }}</span>
               </div>
-              <div class="sensor-card__description">{{ sensor.description }}</div>
+              <div class="sensor-card__description">
+                {{ sensor.description }}
+              </div>
             </div>
           </div>
         </li>
       </ul>
     </section>
 
+    <!-- 센서 섹션 -->
     <section class="section-sensor">
       <div class="section-content">
         <!-- 센서 총 개수 카드 -->
         <div class="device-card">
           <div class="device-card__header">
             <div class="device-card__title">Device</div>
-            <RouterLink to="/detail" class="device-card__link">
-              <!-- <img src="" alt=""> -->
+            <RouterLink to="/chart" class="device-card__link">
+              <img :src="EastTopIcon" width="24" height="24" alt="east" />
             </RouterLink>
           </div>
           <div class="device-card__content">
             <div class="device-card__item">
               <span class="device-card__label">Sensor</span>
-              <span class="device-card__value">6</span>
+              <span class="device-card__value">{{ sensorCount }}</span>
             </div>
             <div class="device-card__item">
               <span class="device-card__label">Camera</span>
@@ -51,17 +200,41 @@
           </div>
         </div>
 
+        <!-- 센서 목록 -->
         <div class="content-body">
-          <div class="sensor-card">
+          <div
+            v-for="sensor in sensorList"
+            :key="sensor.device_id"
+            :value="sensor.device_id"
+            :class="[
+              'sensor-card',
+              sensor.last_alert_type === 'warning'
+                ? 'sensor-card--warning'
+                : sensor.last_alert_type === 'error'
+                  ? 'sensor-card--error'
+                  : 'sensor-card--normal',
+            ]"
+          >
             <div class="sensor-card__header">
-              <span class="sensor-card__status-indicator"></span>
-              <div class="sensor-card__title">습도센서-201</div>
+              <span
+                class="sensor-card__status-indicator"
+                :class="{
+                  'sensor-card__status-indicator--orange': sensor.last_alert_type === 'warning',
+                  'sensor-card__status-indicator--yellow': sensor.last_alert_type === 'error',
+                  'sensor-card__status-indicator--green':
+                    sensor.last_alert_type === 'info' || !sensor.last_alert_type,
+                }"
+              ></span>
+              <div class="sensor-card__title">{{ sensor.name }}</div>
             </div>
             <div class="sensor-card__meta">
-              <span>HUMI-Y200</span> &middot; <span>습도 센서</span>
+              <span>{{ sensor.model }}</span> &middot; <span>{{ sensor.description }} 센서</span>
             </div>
-            <div class="sensor-card__alert">
-              [습도센서-201] 측정값(82.00%)이 최대 임계값(80.00%)을 초과했습니다.
+            <div
+              v-if="sensor.last_alert_type"
+              :class="['sensor-card__alert', `sensor-card__alert--${sensor.last_alert_type}`]"
+            >
+              {{ sensor.last_alert_message }}
             </div>
           </div>
         </div>
@@ -78,24 +251,24 @@
               <span>Camera 1</span>
             </div>
             <div class="monitor-camera__link">
-              <img src="" alt="" />
+              <img :src="EastTopIcon" width="24" height="24" alt="east" />
             </div>
           </div>
           <div class="monitor-camera__image">
-            <img src="" alt="" />
+            <img :src="CameraImage" alt="Camera View" />
           </div>
           <div class="monitor-camera__actions">
             <button class="action-button">
-              <img src="" alt="" />
+              <img :src="ArrowBackIcon" width="24" height="24" alt="arrow_back" />
             </button>
             <button class="action-button">
-              <img src="" alt="" />
+              <img :src="CaptureIcon" width="24" height="24" alt="capture" />
             </button>
             <button class="action-button">
-              <img src="" alt="" />
+              <img :src="VideoIcon" width="24" height="24" alt="video" />
             </button>
             <button class="action-button">
-              <img src="" alt="" />
+              <img :src="ArrowForwardIcon" width="24" height="24" alt="arrow_forward" />
             </button>
           </div>
         </div>
@@ -116,9 +289,9 @@
             <div class="task-item task-item--completed">
               <div class="task-item__header">
                 <span class="task-item__title">자동 관수 작업</span>
-                <span class="task-item__status">
-                  <!-- <img src="" alt="" /> -->
-                </span>
+                <span class="task-item__status"
+                  ><img :src="CheckCircleIcon" width="24" height="24" alt="arrow_forward"
+                /></span>
               </div>
               <div class="task-item__body">
                 <span class="task-item__description">
@@ -131,9 +304,9 @@
             <div class="task-item task-item--pending">
               <div class="task-item__header">
                 <span class="task-item__title">환경 제어</span>
-                <span class="task-item__status">
-                  <!-- <img src="" alt="" /> -->
-                </span>
+                <span class="task-item__status"
+                  ><img :src="CircleIcon" width="24" height="24" alt="arrow_forward"
+                /></span>
               </div>
               <div class="task-item__body">
                 <span class="task-item__description">
@@ -149,45 +322,93 @@
   </div>
 </template>
 
-<script setup>
-import store from '@/store'
-import { ref, computed } from 'vue'
-
-const selectedHouse = computed(() => store.state.house.selectedHouse)
-
-const sensorsData = ref({
-  11: [
-    { name: '온도', value: 25, unit: '°C', description: '적정 온도를 유지하고 있습니다.' },
-    { name: '습도', value: 65, unit: '%', description: '습도가 적정 수준입니다.' },
-    { name: '토양 수분', value: 42, unit: '%', description: '토양 수분이 적절합니다.' },
-  ],
-  12: [
-    { name: '온도', value: 28, unit: '°C', description: '온도가 약간 높습니다.' },
-    { name: '습도', value: 82, unit: '%', description: '습도가 너무 높습니다.' },
-    { name: 'CO2', value: 680, unit: 'ppm', description: 'C02 농도가 정상입니다.' },
-  ],
-  13: [
-    { name: '온도', value: 22, unit: '°C', description: '온도가 약간 낮습니다.' },
-    { name: '습도', value: 55, unit: '%', description: '습도가 적정 수준입니다.' },
-    { name: '조도', value: 5400, unit: 'lxu', description: '조도가 충분합니다.' },
-  ],
-})
-
-const filteredSensors = computed(() => {
-  if (!selectedHouse.value?.house_id) return []
-  return sensorsData.value[selectedHouse.value?.house_id] || []
-})
-
-const getHouseName = computed(() => {
-  if (!selectedHouse.value) return ''
-  return selectedHouse.value?.name
-})
-</script>
-
 <style lang="scss" scoped>
+// 하우스 선택 메시지 스타일
+.house-selection-message {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  height: calc(100vh - var(--header-height) - 11px);
+  background-color: var(--body-bg-color);
+}
+
+.message-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  background-color: var(--item-bg-white);
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  text-align: center;
+
+  .error-message {
+    font-size: 14px;
+    color: var(--item-red-color);
+    margin-top: 6px;
+    margin-bottom: 12px;
+    max-width: 400px;
+    font-weight: 500;
+    padding: 8px;
+    background-color: #fae5e5;
+    border-radius: 4px;
+  }
+}
+
+.message-icon {
+  font-size: 48px;
+  margin-bottom: 20px;
+}
+
+.message-container h2 {
+  font-size: 24px;
+  color: #1e293b;
+  margin-bottom: 16px;
+}
+
+.message-container p {
+  font-size: 14px;
+  color: #64748b;
+  max-width: 400px;
+}
+
+// 로딩 화면 스타일
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  height: calc(100vh - var(--header-height) - 11px);
+  background-color: var(--body-bg-color);
+}
+
+.loading-spinner {
+  width: 50px;
+  height: 50px;
+  border: 5px solid rgba(0, 0, 0, 0.1);
+  border-radius: 50%;
+  border-top-color: var(--item-blue-color);
+  animation: spin 1s ease-in-out infinite;
+  margin-bottom: 20px;
+}
+
+.loading-text {
+  color: #1e293b;
+  font-size: 1.2rem;
+  font-weight: 500;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .layout-dashboard {
   display: flex;
-  height: calc(100vh - var(--header-height) - 11px); // 11px는 border-top의 두께
+  height: calc(100vh - var(--header-height) - 11px); // 임시 방편 11px
   overflow: hidden;
   background-color: var(--body-bg-color);
 
@@ -201,15 +422,13 @@ const getHouseName = computed(() => {
 
   .section-map {
     margin-left: 10px;
-
     &__view {
       width: 850px;
       height: 370px;
       margin-bottom: 10px;
       border-radius: var(--default-border-radius);
-      background: url();
-      background-color: var(--home-bg-color);
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      background: url('@/assets/images/map2.png') no-repeat center center;
+      background-color: var(--item-bg-lighter);
     }
 
     &__indicators {
@@ -230,7 +449,7 @@ const getHouseName = computed(() => {
           justify-content: space-between;
           box-sizing: border-box;
           border-radius: var(--default-border-radius);
-          background-color: #ffffff;
+          background-color: var(--item-bg-white);
           box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 
           &__header {
@@ -264,7 +483,7 @@ const getHouseName = computed(() => {
           &__link {
             width: 32px;
             height: 32px;
-            background-color: #f1f5f9;
+            background-color: var(--item-bg-lighter);
             border-radius: var(--default-border-radius);
             display: flex;
             align-items: center;
@@ -316,7 +535,7 @@ const getHouseName = computed(() => {
         display: flex;
         flex-direction: column;
         gap: 15px;
-        background-color: #ffffff;
+        background-color: var(--item-bg-white);
         padding: 15px;
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 
@@ -335,7 +554,7 @@ const getHouseName = computed(() => {
         &__link {
           width: 32px;
           height: 32px;
-          background-color: #f1f5f9;
+          background-color: var(--item-bg-lighter);
           border-radius: var(--default-border-radius);
           display: flex;
           align-items: center;
@@ -387,15 +606,15 @@ const getHouseName = computed(() => {
           box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 
           &--normal {
-            border-left: 5px solid var(--item-blue-color); // 파란색 (info/normal)
+            border-left: 5px solid var(--item-blue-color);
           }
 
           &--warning {
-            border-left: 5px solid var(--item-orange-color); // 주황색
+            border-left: 5px solid var(--item-orange-color);
           }
 
           &--error {
-            border-left: 5px solid var(--item-red-color); // 빨간색
+            border-left: 5px solid var(--item-red-color);
           }
 
           &__header {
@@ -505,7 +724,7 @@ const getHouseName = computed(() => {
       overflow: hidden;
 
       .monitor-camera {
-        background-color: #f8fafc;
+        background-color: var(--item-bg-lighter);
         border-radius: var(--default-border-radius);
         padding: 15px;
         box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
@@ -533,7 +752,7 @@ const getHouseName = computed(() => {
           align-items: center;
           justify-content: center;
           cursor: pointer;
-          background-color: #f1f5f9;
+          background-color: var(--item-bg-lighter);
           transition: all 0.2s ease;
 
           &:hover {
@@ -545,7 +764,7 @@ const getHouseName = computed(() => {
           width: 100%;
           height: 330px;
           border-radius: var(--default-border-radius);
-          background-color: #f1f5f9;
+          background-color: var(--item-bg-lighter);
           overflow: hidden;
           margin-bottom: 10px;
 
@@ -564,7 +783,7 @@ const getHouseName = computed(() => {
             padding: 8px;
             border: none;
             border-radius: var(--default-border-radius);
-            background-color: #f1f5f9;
+            background-color: var(--item-bg-lighter);
             cursor: pointer;
             transition: all 0.2s ease;
 
@@ -632,12 +851,12 @@ const getHouseName = computed(() => {
           .task-item {
             padding: 12px;
             border-radius: var (--default-border-radius);
-            background-color: #ffffff;
+            background-color: var(--item-bg-white);
             box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 
             &--completed {
               border-left: 5px solid var(--item-blue-color);
-              background-color: #ffffff;
+              background-color: var(--item-bg-white);
 
               .task-item__status img {
                 filter: invert(45%) sepia(98%) saturate(1234%) hue-rotate(199deg) brightness(97%)
@@ -647,7 +866,7 @@ const getHouseName = computed(() => {
 
             &--pending {
               border-left: 5px solid #cbd5e1;
-              background-color: #ffffff;
+              background-color: var(--item-bg-white);
 
               .task-item__status img {
                 filter: brightness(0);
@@ -695,14 +914,5 @@ const getHouseName = computed(() => {
       }
     }
   }
-}
-
-.house-indicator {
-  display: inline-block;
-  padding: 8px 16px;
-  background-color: rgba(255, 255, 255, 0.8);
-  border-radius: var(--default-border-radius);
-  font-weight: bold;
-  margin: 10px;
 }
 </style>

@@ -1,10 +1,16 @@
 import { createStore } from 'vuex'
-import house from './modules/house.js'
-import user from './modules/user.js'
+import user from './modules/user'
+import detail from './modules/detail'
+import house from './modules/house'
+import sensor from './modules/sensor'
+import alert from './modules/alert'
 
 export default createStore({
   modules: {
-    house,
     user,
+    detail,
+    house,
+    sensor,
+    alert,
   },
 })
