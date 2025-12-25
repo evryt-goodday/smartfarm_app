@@ -1,5 +1,6 @@
 import axios from '@/plugins/axios'
 import monitoringService from '@/services/monitoringService'
+import socketService from '@/plugins/socket'
 
 export default {
   namespaced: true,
@@ -18,6 +19,7 @@ export default {
       wind: '',
       pressure: '',
     },
+		socketConnected: false
   },
 
   mutations: {
@@ -43,6 +45,37 @@ export default {
         }
       })
     },
+
+		UPDATE_SENSOR_REALTIME(state, { deviceId, value, timestamp }) {
+      const sensor = Object.values(state.sensorList).find(
+        (s) => s.device_id === deviceId
+      )
+
+      if (sensor) {
+        state.sensorList = {
+          ...state.sensorList,
+          [deviceId]: {
+            ...sensor,
+            current_value: value,
+            value_recorded_at: timestamp,
+          },
+        }
+
+        state.sensorRealtime = {
+          ...state.sensorRealtime,
+          [deviceId]: {
+            value,
+            recorded_at: timestamp,
+          },
+        }
+
+        console.log(`실시간 센서 업데이트 (device: ${deviceId}): ${value}`)
+      }
+    },
+    SET_SOCKET_CONNECTED(state, status) {
+      state.socketConnected = status
+    },
+
     SET_SENSOR_DATA(state, { deviceId, period, data }) {
       if (!state.sensorData[deviceId]) {
         state.sensorData = {
@@ -96,6 +129,41 @@ export default {
   },
 
   actions: {
+		initializeSocket({ commit, rootState }) {
+      socketService.connect()
+      commit('SET_SOCKET_CONNECTED', true)
+
+      socketService.onSensorUpdate((data) => {
+        console.log('Socket: 센서 데이터 수신', data)
+        commit('UPDATE_SENSOR_REALTIME', {
+          deviceId: data.deviceId,
+          value: data.value,
+          timestamp: data.timestamp,
+        })
+      })
+
+      socketService.onActuatorUpdate((data) => {
+        console.log('Socket: 액추에이터 상태 수신', data)
+      })
+
+      socketService.onAlert((alert) => {
+        console.log('Socket: 알림 수신', alert)
+      })
+
+      console.log('Socket 이벤트 리스너 등록 완료')
+    },
+
+    disconnectSocket({ commit }) {
+      socketService.disconnect()
+      commit('SET_SOCKET_CONNECTED', false)
+    },
+
+    subscribeToHouse({ state }, houseId) {
+      if (state.socketConnected) {
+        socketService.subscribeToHouse(houseId)
+      }
+    },
+
     async fetchSensorList({ commit, rootState }) {
       try {
         commit('SET_LOADING', true)
