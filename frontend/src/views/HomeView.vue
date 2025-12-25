@@ -42,9 +42,14 @@ watch(selectedHouse, async (newValue) => {
 
     try {
       await store.dispatch('sensor/fetchSensorList')
-      if (!timer) {
-        startRealTimeUpdates()
-      }
+		
+      const houseId = newValue.house_id || newValue
+      store.dispatch('sensor/subscribeToHouse', houseId)
+      
+      // polling은 Socket으로 대체되므로 주석 처리
+      // if (!timer) {
+      //   startRealTimeUpdates()
+      // }
     } catch (error) {
       console.error('센서 데이터 로드 실패:', error)
 
@@ -92,9 +97,15 @@ onMounted(async () => {
     isLoading.value = true
     hasApiError.value = false
 
+    console.log('Socket 초기화 시작')
+    store.dispatch('sensor/initializeSocket')
+
     if (isHouseSelected.value) {
       await store.dispatch('sensor/fetchSensorList')
-      startRealTimeUpdates()
+      
+      const houseId = selectedHouse.value.house_id || selectedHouse.value
+      console.log('하우스 구독:', houseId)
+      store.dispatch('sensor/subscribeToHouse', houseId)
     }
   } catch (error) {
     console.error('센서 목록 로딩 실패:', error)
@@ -105,7 +116,13 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  if (timer) clearInterval(timer)
+  if (timer) {
+    clearInterval(timer)
+    timer = null
+  }
+
+  console.log('Socket 연결 해제')
+  store.dispatch('sensor/disconnectSocket')
 })
 
 const getSensorInfo = (type) => {
