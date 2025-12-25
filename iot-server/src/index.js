@@ -1,8 +1,8 @@
 import express from "express"
 import cors from "cors"
-import { testConnection } from "./models/connection.js";
+import { testConnection } from "./models/db.js";
 import sensorRoutes from "./routes/sensorRoutes.js";
-import { chechBackendHealth } from "./services/backendService.js";
+import { checkBackendHealth } from "./services/backendService.js";
 
 const app = express();
 const PORT = 3002;
@@ -14,7 +14,7 @@ app.use(express.urlencoded({ extended: true }));
 testConnection();
 
 setTimeout(() => {
-	chechBackendHealth();
+	checkBackendHealth();
 }, 2000);
 
 app.use("/api/sensor", sensorRoutes);
