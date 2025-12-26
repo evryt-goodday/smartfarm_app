@@ -7,6 +7,7 @@ import sensorRoutes from "./composition/sensor/routes/sensorRoutes.js";
 import detailRoutes from "./composition/Detail/routes/detailRoutes.js";
 import alertRoutes from "./composition/alert/routes/alertRoutes.js";
 import internalRoutes from "./composition/internal/routes/internalRoutes.js";
+import actuatorRoutes from "./composition/actuator/routes/actuatorRoutes.js";
 import { testConnection } from "./models/db.js";
 import { setupThresholdMonitoringScheduler } from "./utils/monitoringScheduler.js";
 import { initializeSocket } from "./config/socketConfig.js";
@@ -49,6 +50,7 @@ app.use("/sensor", sensorRoutes);
 app.use("/detail", detailRoutes);
 app.use("/alert", alertRoutes);
 app.use("/internal", internalRoutes);
+app.use("/actuator", actuatorRoutes);
 
 // 임계값 모니터링 스케줄러 설정
 setupThresholdMonitoringScheduler().catch((error) => {
