@@ -1,5 +1,6 @@
 <script setup>
 import { useStore } from 'vuex'
+import axios from '@/plugins/axios'
 
 import EastTopIcon from '@/assets/icons/common/east-top.svg'
 import ArrowBackIcon from '@/assets/icons/home/arrow_back.svg'
@@ -9,7 +10,7 @@ import CaptureIcon from '@/assets/icons/home/capture.svg'
 import CheckCircleIcon from '@/assets/icons/home/check_circle.svg'
 import CircleIcon from '@/assets/icons/home/circle.svg'
 import CameraImage from '@/assets/images/camera.png'
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch, getCurrentInstance } from 'vue'
 import { SENSOR_TYPES, SENSOR_TYPE_MAPPING } from '@/constants/sensors'
 
 const store = useStore()
@@ -21,6 +22,18 @@ const isLoadingData = ref(false)
 const hasApiError = ref(false)
 const errorMessage = ref('')
 let timer = null
+
+// [추가] 액추에이터 제어 관련 상태
+const controlMode = ref('auto')
+const actuators = ref({
+  fan: false,
+  pump: false,
+  led: false
+})
+
+// [추가] Socket 인스턴스 가져오기
+const instance = getCurrentInstance()
+const socket = instance.appContext.config.globalProperties.$socket
 
 const selectedHouse = computed(() => store.state.house.selectedHouse)
 const isHouseSelected = computed(() => selectedHouse.value && selectedHouse.value !== '')
@@ -42,7 +55,8 @@ watch(selectedHouse, async (newValue) => {
 
     try {
       await store.dispatch('sensor/fetchSensorList')
-		
+      
+      // Socket으로 하우스 구독
       const houseId = newValue.house_id || newValue
       store.dispatch('sensor/subscribeToHouse', houseId)
       
@@ -97,15 +111,23 @@ onMounted(async () => {
     isLoading.value = true
     hasApiError.value = false
 
-    console.log('Socket 초기화 시작')
+    // Socket 초기화
+    console.log('🔌 Socket 초기화 시작')
     store.dispatch('sensor/initializeSocket')
+
+    // [추가] 액추에이터 Socket 리스너 설정
+    setupSocketListeners()
 
     if (isHouseSelected.value) {
       await store.dispatch('sensor/fetchSensorList')
       
+      // 하우스 구독
       const houseId = selectedHouse.value.house_id || selectedHouse.value
-      console.log('하우스 구독:', houseId)
+      console.log('📍 하우스 구독:', houseId)
       store.dispatch('sensor/subscribeToHouse', houseId)
+      
+      // [추가] 액추에이터 초기 상태 로드
+      await loadActuatorInitialState(houseId)
     }
   } catch (error) {
     console.error('센서 목록 로딩 실패:', error)
@@ -116,18 +138,118 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  // 타이머 정리
   if (timer) {
     clearInterval(timer)
     timer = null
   }
 
-  console.log('Socket 연결 해제')
+  // [추가] 액추에이터 Socket 리스너 해제
+  if (socket) {
+    socket.off('actuator:updated')
+    socket.off('sensor:data')
+  }
+
+  // Socket 연결 해제
+  console.log('👋 Socket 연결 해제')
   store.dispatch('sensor/disconnectSocket')
 })
 
 const getSensorInfo = (type) => {
   const mappedType = SENSOR_TYPE_MAPPING[type?.toLowerCase()]
   return SENSOR_TYPES[mappedType] || {}
+}
+
+// [추가] 액추에이터 제어 함수들
+const setupSocketListeners = () => {
+  if (!socket) return
+  
+  socket.on('actuator:updated', (data) => {
+    console.log('Actuator updated:', data)
+    
+    // 개별 액추에이터 상태 업데이트
+    if (data.type) {
+      actuators.value[data.type] = data.isOn === 1 || data.isOn === true
+    }
+    
+    if (data.mode) {
+      controlMode.value = data.mode
+    }
+  })
+  
+  // sensor:data 이벤트로 초기 액추에이터 상태 받기
+  socket.on('sensor:data', (data) => {
+    if (data.actuators) {
+      actuators.value.fan = data.actuators.fan || false
+      actuators.value.pump = data.actuators.pump || false
+      actuators.value.led = data.actuators.led || false
+    }
+    
+    if (data.mode) {
+      controlMode.value = data.mode
+    }
+  })
+}
+
+const loadActuatorInitialState = async (houseId) => {
+  try {
+    const response = await axios.get(`/actuator/${houseId}`)
+    
+    if (response.data.success && response.data.data) {
+      
+      let modeSet = false // 모드가 한 번만 설정되도록
+      
+      response.data.data.forEach(actuator => {
+        const type = actuator.actuator_type
+        actuators.value[type] = actuator.is_on === 1
+        
+        // 첫 번째 액추에이터의 mode만 사용
+        if (!modeSet && actuator.mode) {
+          console.log('모드 설정:', actuator.mode)
+          controlMode.value = actuator.mode
+          modeSet = true
+        }
+      })
+    }
+  } catch (error) {
+    console.error('액추에이터 초기 상태 로드 실패:', error)
+  }
+}
+
+const changeMode = async () => {
+  try {
+    await axios.post('/actuator/control', {
+      actuatorId: 1,
+      command: controlMode.value
+    })
+    
+    const modeText = controlMode.value === 'auto' ? '자동' : '수동'
+    console.log(`${modeText} 모드로 변경되었습니다`)
+  } catch (error) {
+    console.error('Failed to change mode:', error)
+  }
+}
+
+const toggleActuator = async (name, actuatorId) => {
+  if (controlMode.value === 'auto') {
+    console.warn('수동 모드에서만 제어할 수 있습니다')
+    return
+  }
+  
+  const newState = !actuators.value[name]
+  const command = newState ? 'on' : 'off'
+  
+  try {
+    await axios.post('/actuator/control', {
+      actuatorId: actuatorId,
+      command: command
+    })
+    
+    const labels = { fan: '팬', pump: '펌프', led: 'LED' }
+    console.log(`${labels[name]} ${newState ? 'ON' : 'OFF'}`)
+  } catch (error) {
+    console.error('Failed to control actuator:', error)
+  }
 }
 </script>
 
@@ -254,6 +376,58 @@ const getSensorInfo = (type) => {
               {{ sensor.last_alert_message }}
             </div>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- [추가] 액추에이터 제어 섹션 -->
+    <section class="section-control">
+      <div class="control-panel">
+        <h2>액추에이터 제어</h2>
+        
+        <!-- 모드 스위치 -->
+        <div class="mode-switch">
+          <label>
+            <input type="radio" value="auto" v-model="controlMode" @change="changeMode">
+            자동 모드
+          </label>
+          <label>
+            <input type="radio" value="manual" v-model="controlMode" @change="changeMode">
+            수동 모드
+          </label>
+        </div>
+        
+        <!-- 액추에이터 버튼들 -->
+        <div class="actuator-controls">
+          <button 
+            class="actuator-btn"
+            :class="{ active: actuators.fan }"
+            :disabled="controlMode === 'auto'"
+            @click="toggleActuator('fan', 1)">
+            <span class="icon">🌀</span>
+            <span class="label">팬</span>
+            <span class="status">{{ actuators.fan ? 'ON' : 'OFF' }}</span>
+          </button>
+          
+          <button 
+            class="actuator-btn"
+            :class="{ active: actuators.pump }"
+            :disabled="controlMode === 'auto'"
+            @click="toggleActuator('pump', 2)">
+            <span class="icon">💧</span>
+            <span class="label">펌프</span>
+            <span class="status">{{ actuators.pump ? 'ON' : 'OFF' }}</span>
+          </button>
+          
+          <button 
+            class="actuator-btn"
+            :class="{ active: actuators.led }"
+            :disabled="controlMode === 'auto'"
+            @click="toggleActuator('led', 3)">
+            <span class="icon">💡</span>
+            <span class="label">LED</span>
+            <span class="status">{{ actuators.led ? 'ON' : 'OFF' }}</span>
+          </button>
         </div>
       </div>
     </section>
@@ -431,6 +605,7 @@ const getSensorInfo = (type) => {
 
   .section-map,
   .section-sensor,
+  .section-control,
   .section-monitor {
     flex: 1;
     margin: 5px 5px 0 5px;
@@ -926,6 +1101,122 @@ const getSensorInfo = (type) => {
               font-size: 0.8em;
               color: #64748b;
             }
+          }
+        }
+      }
+    }
+  }
+
+  // [추가] 액추에이터 제어 섹션 스타일
+  .section-control {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+
+    .control-panel {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      height: 100%;
+      
+      h2 {
+        margin: 0 0 20px 0;
+        font-size: 20px;
+        font-weight: 600;
+        color: #333;
+      }
+      
+      .mode-switch {
+        display: flex;
+        gap: 20px;
+        margin-bottom: 24px;
+        padding-bottom: 20px;
+        border-bottom: 1px solid #e0e0e0;
+        
+        label {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          cursor: pointer;
+          font-size: 14px;
+          font-weight: 500;
+          color: #666;
+          transition: color 0.2s;
+          
+          input[type="radio"] {
+            cursor: pointer;
+            width: 18px;
+            height: 18px;
+          }
+          
+          &:has(input:checked) {
+            color: #4CAF50;
+          }
+        }
+      }
+      
+      .actuator-controls {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 16px;
+        
+        .actuator-btn {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 8px;
+          padding: 20px;
+          border: 2px solid #e0e0e0;
+          border-radius: 12px;
+          background: white;
+          cursor: pointer;
+          transition: all 0.3s;
+          font-family: inherit;
+          
+          &:hover:not(:disabled) {
+            border-color: #4CAF50;
+            background: #f1f8f4;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(76, 175, 80, 0.2);
+          }
+          
+          &:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            background: #f5f5f5;
+          }
+          
+          &.active {
+            border-color: #4CAF50;
+            background: #4CAF50;
+            color: white;
+            
+            &:hover:not(:disabled) {
+              background: #45a049;
+            }
+            
+            .status {
+              background: rgba(255, 255, 255, 0.3);
+            }
+          }
+          
+          .icon {
+            font-size: 32px;
+          }
+          
+          .label {
+            font-size: 14px;
+            font-weight: 600;
+            color: inherit;
+          }
+          
+          .status {
+            font-size: 12px;
+            font-weight: 500;
+            padding: 4px 12px;
+            border-radius: 12px;
+            background: rgba(0, 0, 0, 0.1);
           }
         }
       }

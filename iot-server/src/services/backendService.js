@@ -11,7 +11,7 @@ const BACKEND_URL = process.env.BACKEND_URL || "http://localhost:3000";
 export const notifyBackendSensorUpdate = async (houseId, deviceId, value) => {
     try {
         const response = await axios.post(
-            `${BACKEND_URL}/internal/sensor/notify`,
+            `${BACKEND_URL}/api/internal/sensor/notify`,
             {
                 houseId,
                 deviceId,
@@ -62,7 +62,7 @@ export const checkBackendHealth = async () => {
 export const notifyBackend = async (eventData) => {
     try {
         const response = await axios.post(
-            `${BACKEND_URL}/internal/sensor/notify`,
+            `${BACKEND_URL}/api/internal/sensor/notify`,
             eventData,
             {
                 timeout: 5000,

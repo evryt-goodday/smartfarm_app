@@ -44,13 +44,13 @@ app.get("/", (req, res) => {
 });
 
 // 라우터 설정
-app.use("/user", userRoutes);
-app.use("/house", houseRoutes);
-app.use("/sensor", sensorRoutes);
-app.use("/detail", detailRoutes);
-app.use("/alert", alertRoutes);
-app.use("/internal", internalRoutes);
-app.use("/actuator", actuatorRoutes);
+app.use("/api/user", userRoutes);
+app.use("/api/house", houseRoutes);
+app.use("/api/sensor", sensorRoutes);
+app.use("/api/detail", detailRoutes);
+app.use("/api/alert", alertRoutes);
+app.use("/api/internal", internalRoutes);
+app.use("/api/actuator", actuatorRoutes);
 
 // 임계값 모니터링 스케줄러 설정
 setupThresholdMonitoringScheduler().catch((error) => {
@@ -65,6 +65,6 @@ app.use((err, req, res, next) => {
 
 // 서버 시작
 httpServer.listen(PORT, () => {
-    console.log(`🚀 서버가 http://localhost:${PORT} 에서 실행 중입니다.`);
-    console.log(`🔌 WebSocket 서버 준비 완료`);
+    console.log(`서버가 http://localhost:${PORT} 에서 실행 중입니다.`);
+    console.log(`WebSocket 서버 준비 완료`);
 });

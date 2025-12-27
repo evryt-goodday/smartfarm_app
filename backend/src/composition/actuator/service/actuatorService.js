@@ -75,7 +75,7 @@ class ActuatorService {
       // 1. 제어 명령 저장
       const commandQuery = `
         INSERT INTO control_command (actuator_id, command, requested_by, status)
-        VALUES (?, ?, ?, 'executed')
+        VALUES (?, ?, ?, 'pending')
       `
       await connection.query(commandQuery, [actuatorId, command.toLowerCase(), userId])
 
