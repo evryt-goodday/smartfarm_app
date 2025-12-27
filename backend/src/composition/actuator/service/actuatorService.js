@@ -1,6 +1,9 @@
 import { pool } from '../../../models/db.js'
 
 class ActuatorService {
+  /**
+   * 하우스별 액추에이터 목록 조회
+   */
   async getActuatorsByHouse(houseId) {
     const query = `
       SELECT 
@@ -9,16 +12,15 @@ class ActuatorService {
         ad.device_id,
         ad.name,
         ad.actuator_type,
+        ad.is_on,
         ad.model,
         ad.location,
         ad.status as device_status,
         ad.created_at,
-        ast.is_on,
-        ast.mode,
-        ast.brightness,
-        ast.updated_at
+        ad.updated_at,
+        h.control_mode as mode
       FROM actuator_device ad
-      LEFT JOIN actuator_status ast ON ad.actuator_id = ast.actuator_id
+      INNER JOIN house h ON ad.house_id = h.house_id
       WHERE ad.house_id = ?
       ORDER BY ad.actuator_id
     `
@@ -33,6 +35,9 @@ class ActuatorService {
     }
   }
 
+  /**
+   * 특정 액추에이터 상태 조회
+   */
   async getActuatorStatus(actuatorId) {
     const query = `
       SELECT 
@@ -41,17 +46,15 @@ class ActuatorService {
         ad.device_id,
         ad.actuator_type,
         ad.name,
+        ad.is_on,
         ad.model,
         ad.location,
         ad.status as device_status,
         ad.created_at,
-        ad.updated_at as device_updated_at,
-        ast.is_on,
-        ast.mode,
-        ast.brightness,
-        ast.updated_at as status_updated_at
+        ad.updated_at,
+        h.control_mode as mode
       FROM actuator_device ad
-      LEFT JOIN actuator_status ast ON ad.actuator_id = ast.actuator_id
+      INNER JOIN house h ON ad.house_id = h.house_id
       WHERE ad.actuator_id = ?
     `
     
@@ -65,7 +68,9 @@ class ActuatorService {
     }
   }
 
-
+  /**
+   * 액추에이터 제어 (ON/OFF/AUTO/MANUAL)
+   */
   async controlActuator(actuatorId, command, userId) {
     const connection = await pool.getConnection()
 
@@ -83,32 +88,31 @@ class ActuatorService {
       const isOn = command.toLowerCase() === 'on'
       const mode = ['auto', 'manual'].includes(command.toLowerCase()) ? command.toLowerCase() : null
       
-      let statusQuery
-      let statusParams
-      
       if (mode) {
-        // 모드 변경 (auto/manual)
-        statusQuery = `
-          INSERT INTO actuator_status (actuator_id, mode)
-          VALUES (?, ?)
-          ON DUPLICATE KEY UPDATE
-            mode = VALUES(mode),
-            updated_at = CURRENT_TIMESTAMP
+        // 모드 변경 (auto/manual) - house 테이블의 control_mode 업데이트
+        const houseQuery = `SELECT house_id FROM actuator_device WHERE actuator_id = ?`
+        const houseResult = await connection.query(houseQuery, [actuatorId])
+        const houseId = houseResult[0]?.house_id
+        
+        if (!houseId) {
+          throw new Error('하우스 정보를 찾을 수 없습니다.')
+        }
+        
+        const modeQuery = `
+          UPDATE house
+          SET control_mode = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE house_id = ?
         `
-        statusParams = [actuatorId, mode]
+        await connection.query(modeQuery, [mode, houseId])
       } else {
-        // ON/OFF 상태 변경
-        statusQuery = `
-          INSERT INTO actuator_status (actuator_id, is_on)
-          VALUES (?, ?)
-          ON DUPLICATE KEY UPDATE
-            is_on = VALUES(is_on),
-            updated_at = CURRENT_TIMESTAMP
+        // ON/OFF 상태 변경 - actuator_device 테이블 업데이트
+        const statusQuery = `
+          UPDATE actuator_device
+          SET is_on = ?, updated_at = CURRENT_TIMESTAMP
+          WHERE actuator_id = ?
         `
-        statusParams = [actuatorId, isOn]
+        await connection.query(statusQuery, [isOn, actuatorId])
       }
-      
-      await connection.query(statusQuery, statusParams)
 
       await connection.commit()
 
@@ -126,6 +130,9 @@ class ActuatorService {
     }
   }
 
+  /**
+   * 제어 이력 조회
+   */
   async getControlHistory(actuatorId, limit = 50) {
     const query = `
       SELECT 

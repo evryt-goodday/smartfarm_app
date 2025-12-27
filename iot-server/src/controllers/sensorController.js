@@ -21,14 +21,13 @@ export const saveSensorData = async (req, res) => {
         
         console.log(`📊 센서 데이터 저장 - Sensor: ${sensorId}, Value: ${value}`);
 
-        // 2. actuator 상태가 있으면 actuator_status 업데이트
+        // 2. actuator 상태가 있으면 actuator_device 업데이트
         if (actuators) {
             for (const [type, isOn] of Object.entries(actuators)) {
                 await conn.query(
-                    `UPDATE actuator_status AS ast
-                     JOIN actuator_device AS ad ON ast.actuator_id = ad.actuator_id
-                     SET ast.is_on = ?, ast.updated_at = NOW()
-                     WHERE ad.actuator_type = ?`,
+                    `UPDATE actuator_device
+                     SET is_on = ?, updated_at = NOW()
+                     WHERE actuator_type = ?`,
                     [isOn, type]
                 );
             }
@@ -169,14 +168,13 @@ export const updateCommandStatus = async (req, res) => {
             [status, errorMessage || null, commandId]
         );
 
-        // 2. actuator_status 업데이트 (실행 성공 시만)
+        // 2. actuator_device 업데이트 (실행 성공 시만)
         if (status === "executed" && actuators) {
             for (const [type, isOn] of Object.entries(actuators)) {
                 await conn.query(
-                    `UPDATE actuator_status AS ast
-                     JOIN actuator_device AS ad ON ast.actuator_id = ad.actuator_id
-                     SET ast.is_on = ?, ast.updated_at = NOW()
-                     WHERE ad.actuator_type = ?`,
+                    `UPDATE actuator_device
+                     SET is_on = ?, updated_at = NOW()
+                     WHERE actuator_type = ?`,
                     [isOn, type]
                 );
             }

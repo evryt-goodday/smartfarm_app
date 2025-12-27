@@ -2,6 +2,10 @@ import actuatorService from '../service/actuatorService.js'
 import { emitActuatorUpdate } from '../../../config/socketConfig.js'
 
 class ActuatorController {
+  /**
+   * 하우스별 액추에이터 목록 조회
+   * GET /api/actuator/:houseId
+   */
   async getActuatorsByHouse(req, res) {
     try {
       const { houseId } = req.params
@@ -20,6 +24,10 @@ class ActuatorController {
     }
   }
 
+  /**
+   * 액추에이터 상태 조회
+   * GET /api/actuator/status/:actuatorId
+   */
   async getActuatorStatus(req, res) {
     try {
       const { actuatorId } = req.params
@@ -45,6 +53,11 @@ class ActuatorController {
     }
   }
 
+  /**
+   * 액추에이터 제어
+   * POST /api/actuator/control
+   * Body: { actuatorId, command: 'ON'|'OFF'|'AUTO'|'MANUAL', userId }
+   */
   async controlActuator(req, res) {
     try {
       const { actuatorId, command, userId } = req.body
@@ -74,15 +87,34 @@ class ActuatorController {
       // Socket.IO로 실시간 상태 전송
       const actuator = await actuatorService.getActuatorStatus(actuatorId)
       if (actuator) {
-        emitActuatorUpdate(actuator.house_id, {
-          actuatorId: actuator.actuator_id,
-          status: command,
-          isOn: actuator.is_on,
-          mode: actuator.mode,
-          timestamp: new Date(),
-          name: actuator.name,
-          type: actuator.actuator_type,
-        })
+        const isModCommand = ['AUTO', 'MANUAL'].includes(command.toUpperCase())
+        
+        if (isModCommand) {
+          // 모드 변경 시 해당 하우스의 모든 액추에이터 상태 전송
+          const allActuators = await actuatorService.getActuatorsByHouse(actuator.house_id)
+          allActuators.forEach(act => {
+            emitActuatorUpdate(actuator.house_id, {
+              actuatorId: act.actuator_id,
+              status: command,
+              isOn: act.is_on,
+              mode: act.mode, // 업데이트된 mode
+              timestamp: new Date(),
+              name: act.name,
+              type: act.actuator_type,
+            })
+          })
+        } else {
+          // ON/OFF 명령 시 해당 액추에이터만 전송
+          emitActuatorUpdate(actuator.house_id, {
+            actuatorId: actuator.actuator_id,
+            status: command,
+            isOn: actuator.is_on,
+            mode: actuator.mode,
+            timestamp: new Date(),
+            name: actuator.name,
+            type: actuator.actuator_type,
+          })
+        }
       }
 
       res.json({
@@ -99,6 +131,10 @@ class ActuatorController {
     }
   }
 
+  /**
+   * 제어 이력 조회
+   * GET /api/actuator/history/:actuatorId
+   */
   async getControlHistory(req, res) {
     try {
       const { actuatorId } = req.params

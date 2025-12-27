@@ -194,12 +194,15 @@ const setupSocketListeners = () => {
 const loadActuatorInitialState = async (houseId) => {
   try {
     const response = await axios.get(`/actuator/${houseId}`)
+    console.log('📊 액추에이터 API 응답:', response.data)
     
     if (response.data.success && response.data.data) {
+      console.log('액추에이터 데이터:', response.data.data)
       
       let modeSet = false // 모드가 한 번만 설정되도록
       
       response.data.data.forEach(actuator => {
+        console.log('처리 중인 액추에이터:', actuator)
         const type = actuator.actuator_type
         actuators.value[type] = actuator.is_on === 1
         
@@ -210,6 +213,9 @@ const loadActuatorInitialState = async (houseId) => {
           modeSet = true
         }
       })
+      console.log('✅ 액추에이터 초기 상태 로드 완료')
+      console.log('최종 actuators:', actuators.value)
+      console.log('최종 controlMode:', controlMode.value)
     }
   } catch (error) {
     console.error('액추에이터 초기 상태 로드 실패:', error)
@@ -218,13 +224,22 @@ const loadActuatorInitialState = async (houseId) => {
 
 const changeMode = async () => {
   try {
-    await axios.post('/actuator/control', {
-      actuatorId: 1,
-      command: controlMode.value
-    })
+    // 하우스의 첫 번째 액추에이터로 모드 변경 요청
+    // (백엔드에서 같은 하우스의 모든 액추에이터를 업데이트함)
+    const houseId = selectedHouse.value?.house_id || selectedHouse.value
+    const response = await axios.get(`/actuator/${houseId}`)
     
-    const modeText = controlMode.value === 'auto' ? '자동' : '수동'
-    console.log(`${modeText} 모드로 변경되었습니다`)
+    if (response.data.success && response.data.data.length > 0) {
+      const firstActuatorId = response.data.data[0].actuator_id
+      
+      await axios.post('/actuator/control', {
+        actuatorId: firstActuatorId,
+        command: controlMode.value
+      })
+      
+      const modeText = controlMode.value === 'auto' ? '자동' : '수동'
+      console.log(`${modeText} 모드로 변경되었습니다 (하우스 내 모든 액추에이터)`)
+    }
   } catch (error) {
     console.error('Failed to change mode:', error)
   }
